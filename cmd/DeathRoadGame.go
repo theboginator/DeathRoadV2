@@ -31,27 +31,21 @@ type Game struct {
 	collectedGold bool
 }
 
-type Player struct{
-	name string
-	startX int
-	startY int
+type Player struct {
+	name     string
+	health   int
+	startX   int
+	startY   int
 	manifest Sprite
+	weapon   Weapon
+}
+
+type Weapon struct {
+	name string
 	ammo []Sprite
 }
 
-func gotGold(player, gold Sprite) bool {
-	goldWidth, goldHeight := gold.pict.Size()
-	playerWidth, playerHeight := player.pict.Size()
-	if player.xLoc < gold.xLoc+goldWidth &&
-		player.xLoc+playerWidth > gold.xLoc &&
-		player.yLoc < gold.yLoc+goldHeight &&
-		player.yLoc+playerHeight > gold.yLoc {
-		return true
-	}
-	return false
-}
-
-func (game *Game) Update() error {
+func getPlayerInput(game *Game) {
 	if inpututil.IsKeyJustPressed(ebiten.KeyA) {
 		game.playerSprite.manifest.dx = -3
 	} else if inpututil.IsKeyJustPressed(ebiten.KeyD) {
@@ -67,6 +61,22 @@ func (game *Game) Update() error {
 	} else if inpututil.IsKeyJustReleased(ebiten.KeyW) || inpututil.IsKeyJustReleased(ebiten.KeyS) {
 		game.playerSprite.manifest.dy = 0
 	}
+}
+
+func gotGold(player, gold Sprite) bool {
+	goldWidth, goldHeight := gold.pict.Size()
+	playerWidth, playerHeight := player.pict.Size()
+	if player.xLoc < gold.xLoc+goldWidth &&
+		player.xLoc+playerWidth > gold.xLoc &&
+		player.yLoc < gold.yLoc+goldHeight &&
+		player.yLoc+playerHeight > gold.yLoc {
+		return true
+	}
+	return false
+}
+
+func (game *Game) Update() error {
+	getPlayerInput(game)
 	game.playerSprite.manifest.yLoc += game.playerSprite.manifest.dy
 	game.playerSprite.manifest.xLoc += game.playerSprite.manifest.dx
 	if game.collectedGold == false {
