@@ -31,6 +31,7 @@ type Game struct {
 	playerOrdnance Ordnance
 	coinSprite     Sprite
 	drawOps        ebiten.DrawImageOptions
+	activeOrdnance bool
 	collectedGold  bool
 }
 
@@ -54,25 +55,23 @@ func getPlayerInput(game *Game) { //Handle any movement from the player, and ini
 		game.playerSprite.manifest.dx = -3
 	} else if inpututil.IsKeyJustPressed(ebiten.KeyD) {
 		game.playerSprite.manifest.dx = 3
-	} else if inpututil.IsKeyJustReleased(ebiten.KeyA) || inpututil.IsKeyJustReleased(ebiten.KeyD) {
+	} else if inpututil.IsKeyJustReleased(ebiten.KeyA) {
 		game.playerSprite.manifest.dx = 0
-	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyW) {
+	} else if inpututil.IsKeyJustReleased(ebiten.KeyD) {
+		game.playerSprite.manifest.dx = 0
+	} else if inpututil.IsKeyJustPressed(ebiten.KeyW) {
 		game.playerSprite.manifest.dy = -3
 	} else if inpututil.IsKeyJustPressed(ebiten.KeyS) {
 		game.playerSprite.manifest.dy = 3
-	} else if inpututil.IsKeyJustReleased(ebiten.KeyW) || inpututil.IsKeyJustReleased(ebiten.KeyS) {
+	} else if inpututil.IsKeyJustReleased(ebiten.KeyW) {
+		game.playerSprite.manifest.dy = 0
+	} else if inpututil.IsKeyJustReleased(ebiten.KeyS) {
 		game.playerSprite.manifest.dy = 0
 	}
 
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		game.playerSprite.firing = true
-		game.playerOrdnance.manifest.dx, game.playerOrdnance.manifest.dy = ebiten.CursorPosition() //Get the direction in which to fire ordnance
-		game.playerOrdnance.manifest.xLoc = game.playerSprite.manifest.xLoc                        //Set the start point for new ordnance
-		game.playerOrdnance.manifest.yLoc = game.playerSprite.manifest.yLoc
-		game.playerOrdnance.consumed = false
-		//screen.DrawImage(game.playerSprite.manifest.pict, &game.drawOps)
-		fmt.Println("Fired ordnance. Coords: ", game.playerOrdnance.manifest.dx, game.playerOrdnance.manifest.dy)
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		game.activeOrdnance = true
+		launchPlayerOrdnance(game)
 	} else {
 		game.playerSprite.firing = false
 	}
@@ -86,6 +85,25 @@ func trackPlayer(game *Game) { //Move the player per keyboard input
 func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fired in
 	game.playerOrdnance.manifest.yLoc += game.playerOrdnance.manifest.dy
 	game.playerOrdnance.manifest.xLoc += game.playerOrdnance.manifest.dx
+}
+
+func launchPlayerOrdnance(game *Game) { //Initiate the launch of player ordnance
+	pict, _, err := ebitenutil.NewImageFromFile("assets/gold-coins.png")
+	if err != nil {
+		log.Fatal("failed to load ammunition image", err)
+	}
+	game.playerOrdnance.manifest.pict = pict
+	if game.playerSprite.manifest.dx == 0 && game.playerSprite.manifest.dy == 0 { //Launch ordnance to the right along the x-axis if the player is stationary.
+		game.playerOrdnance.manifest.dx = 6
+		game.playerOrdnance.manifest.dy = 0
+	} else {
+		game.playerOrdnance.manifest.dx = game.playerSprite.manifest.dx * 2
+		game.playerOrdnance.manifest.dy = game.playerSprite.manifest.dy * 2 //Set the direction to fire new ordnance
+	}
+	game.playerOrdnance.manifest.xLoc = game.playerSprite.manifest.xLoc //Set the start point for new ordnance to the player's current position
+	game.playerOrdnance.manifest.yLoc = game.playerSprite.manifest.yLoc
+	game.playerOrdnance.consumed = false
+	fmt.Println("Fired ordnance. Coords: ", game.playerOrdnance.manifest.dx, game.playerOrdnance.manifest.dy)
 }
 
 func gotGold(player, gold Sprite) bool {
@@ -103,7 +121,7 @@ func gotGold(player, gold Sprite) bool {
 func (game *Game) Update() error {
 	getPlayerInput(game)
 	trackPlayer(game)
-	//trackOrdnance(game)
+	trackOrdnance(game)
 	if game.collectedGold == false {
 		game.collectedGold = gotGold(game.playerSprite.manifest, game.coinSprite)
 	}
@@ -120,7 +138,7 @@ func (game Game) Draw(screen *ebiten.Image) {
 		game.drawOps.GeoM.Translate(float64(game.coinSprite.xLoc), float64(game.coinSprite.yLoc))
 		screen.DrawImage(game.coinSprite.pict, &game.drawOps)
 	}
-	if game.playerSprite.firing {
+	if game.activeOrdnance {
 		game.drawOps.GeoM.Reset()
 		game.drawOps.GeoM.Translate(float64(game.playerOrdnance.manifest.xLoc), float64(game.playerOrdnance.manifest.yLoc))
 		screen.DrawImage(game.playerOrdnance.manifest.pict, &game.drawOps)
@@ -138,11 +156,6 @@ func loadPlayer(game *Game) {
 		log.Fatal("failed to load player image", err)
 	}
 	game.playerSprite.manifest.pict = pict
-	pict, _, err = ebitenutil.NewImageFromFile("assets/player-ammo.png")
-	if err != nil {
-		log.Fatal("failed to load ammunition image", err)
-	}
-	game.playerOrdnance.manifest.pict = pict
 }
 
 func loadCoinSprite(game *Game) {
