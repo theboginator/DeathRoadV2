@@ -40,6 +40,7 @@ type Player struct {
 	health   int
 	startX   int
 	startY   int
+	score    int32
 	firing   bool
 	manifest Sprite
 	weapon   Sprite
@@ -72,8 +73,6 @@ func getPlayerInput(game *Game) { //Handle any movement from the player, and ini
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		game.activeOrdnance = true
 		launchPlayerOrdnance(game)
-	} else {
-		game.playerSprite.firing = false
 	}
 }
 
@@ -85,10 +84,16 @@ func trackPlayer(game *Game) { //Move the player per keyboard input
 func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fired in
 	game.playerOrdnance.manifest.yLoc += game.playerOrdnance.manifest.dy
 	game.playerOrdnance.manifest.xLoc += game.playerOrdnance.manifest.dx
+	if game.playerOrdnance.manifest.xLoc > 800 || game.playerOrdnance.manifest.xLoc < 0 || game.playerOrdnance.manifest.yLoc > 700 || game.playerOrdnance.manifest.yLoc < 0 { //If we've hit a border
+		game.activeOrdnance = false
+		fmt.Println("n00ned some ordnance for hitting a wall")
+	}
+	//else if we've hit an enemy/boss
+	//damage it
 }
 
 func launchPlayerOrdnance(game *Game) { //Initiate the launch of player ordnance
-	pict, _, err := ebitenutil.NewImageFromFile("assets/gold-coins.png")
+	pict, _, err := ebitenutil.NewImageFromFile("assets/cannonball.png")
 	if err != nil {
 		log.Fatal("failed to load ammunition image", err)
 	}
@@ -106,13 +111,13 @@ func launchPlayerOrdnance(game *Game) { //Initiate the launch of player ordnance
 	fmt.Println("Fired ordnance. Coords: ", game.playerOrdnance.manifest.dx, game.playerOrdnance.manifest.dy)
 }
 
-func gotGold(player, gold Sprite) bool {
+func gotGold(ordnance, gold Sprite) bool {
 	goldWidth, goldHeight := gold.pict.Size()
-	playerWidth, playerHeight := player.pict.Size()
-	if player.xLoc < gold.xLoc+goldWidth &&
-		player.xLoc+playerWidth > gold.xLoc &&
-		player.yLoc < gold.yLoc+goldHeight &&
-		player.yLoc+playerHeight > gold.yLoc {
+	ordWidth, ordHeight := ordnance.pict.Size()
+	if ordnance.xLoc < gold.xLoc+goldWidth &&
+		ordnance.xLoc+ordWidth > gold.xLoc &&
+		ordnance.yLoc < gold.yLoc+goldHeight &&
+		ordnance.yLoc+ordHeight > gold.yLoc {
 		return true
 	}
 	return false
@@ -121,10 +126,14 @@ func gotGold(player, gold Sprite) bool {
 func (game *Game) Update() error {
 	getPlayerInput(game)
 	trackPlayer(game)
-	trackOrdnance(game)
-	if game.collectedGold == false {
-		game.collectedGold = gotGold(game.playerSprite.manifest, game.coinSprite)
+	if game.activeOrdnance {
+		trackOrdnance(game)
+		if game.collectedGold == false {
+			game.collectedGold = gotGold(game.playerOrdnance.manifest, game.coinSprite) //If ordnance is active, check if it collided with enemy
+		}
+
 	}
+
 	return nil
 }
 
