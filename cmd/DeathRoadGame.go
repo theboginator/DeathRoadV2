@@ -40,13 +40,17 @@ type Game struct {
 	activeEnemies  int
 	enemySprites   [NumEnemies]Enemy
 	coinSprites    [NumBonus]Coins
+	bossSprite     Enemy
 	lifeCounter    Sprite
 	enemyCounter   Sprite
+	VictoryBanner  Sprite
+	LossBanner     Sprite
 	heart          [MaxLife]Sprite
 	badguy         [NumEnemies]Sprite
 	drawOps        ebiten.DrawImageOptions
 	activeOrdnance bool
 	collectedGold  bool
+	bossDefeated   bool
 }
 
 type Player struct {
@@ -67,6 +71,7 @@ type Enemy struct {
 	startX   int
 	startY   int
 	manifest Sprite
+	visible  bool
 }
 
 type Coins struct {
@@ -122,6 +127,13 @@ func trackPlayer(game *Game) { //Move the player per keyboard input
 				game.playerSprite.impact = true
 			}
 		}
+		if !game.bossDefeated && game.bossSprite.visible {
+			if madeContact(game.playerSprite.manifest, game.bossSprite.manifest) && !game.playerSprite.impact {
+				fmt.Println("You got hit by the boss :(")
+				game.playerSprite.health -= 1
+				game.playerSprite.impact = true
+			}
+		}
 	}
 
 }
@@ -159,13 +171,27 @@ func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fir
 				game.enemySprites[i].defeated = true
 				game.activeOrdnance = false
 				game.activeEnemies--
+				game.playerSprite.score += EnemyScore
 			}
 		}
+	}
+	if !game.bossDefeated && game.bossSprite.visible { //hit him if we can see him
+		if madeContact(game.playerOrdnance.manifest, game.bossSprite.manifest) {
+			fmt.Println("You hit the boss!")
+			game.bossSprite.health--
+			game.activeOrdnance = false
+		}
+		if game.bossSprite.health == 0 {
+			fmt.Println("You win! Huzzah")
+			fmt.Println("Your score: ", game.playerSprite.score)
+			game.bossDefeated = true
+		}
+
 	}
 }
 
 func launchPlayerOrdnance(game *Game) { //Initiate the launch of player ordnance
-	pict, _, err := ebitenutil.NewImageFromFile("assets/cannonball.png")
+	pict, _, err := ebitenutil.NewImageFromFile("assets/homework.png")
 	if err != nil {
 		log.Fatal("failed to load ammunition image", err)
 	}
@@ -201,25 +227,28 @@ func (game *Game) Update() error {
 	if game.activeOrdnance {
 		trackOrdnance(game)
 	}
+	if game.activeEnemies == 0 { //Enable viewing boss sprite if the other enemies are gone
+		game.bossSprite.visible = true
+	}
 
 	return nil
 }
 
 func (game Game) Draw(screen *ebiten.Image) {
-	screen.Fill(colornames.Mediumaquamarine)
-	game.drawOps.GeoM.Reset()
+	screen.Fill(colornames.Magenta)
+	game.drawOps.GeoM.Reset() //Draw the player
 	game.drawOps.GeoM.Translate(float64(game.playerSprite.manifest.xLoc), float64(game.playerSprite.manifest.yLoc))
 	screen.DrawImage(game.playerSprite.manifest.pict, &game.drawOps)
 
-	game.drawOps.GeoM.Reset()
+	game.drawOps.GeoM.Reset() //Draw the health bar
 	game.drawOps.GeoM.Translate(float64(game.lifeCounter.xLoc), float64(game.lifeCounter.yLoc))
 	screen.DrawImage(game.lifeCounter.pict, &game.drawOps)
-	for i := 0; i <= game.playerSprite.health; i++ {
+	for i := 0; i < game.playerSprite.health; i++ {
 		game.drawOps.GeoM.Reset()
 		game.drawOps.GeoM.Translate(float64(game.heart[i].xLoc), float64(game.heart[i].yLoc))
 		screen.DrawImage(game.heart[i].pict, &game.drawOps)
 	}
-	game.drawOps.GeoM.Reset()
+	game.drawOps.GeoM.Reset() //Draw the bad guys remaining bar
 	game.drawOps.GeoM.Translate(float64(game.enemyCounter.xLoc), float64(game.enemyCounter.yLoc))
 	screen.DrawImage(game.enemyCounter.pict, &game.drawOps)
 	for i := 0; i < game.activeEnemies; i++ {
@@ -228,7 +257,7 @@ func (game Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(game.badguy[i].pict, &game.drawOps)
 	}
 
-	if game.activeOrdnance {
+	if game.activeOrdnance { //Draw any ordnance
 		game.drawOps.GeoM.Reset()
 		game.drawOps.GeoM.Translate(float64(game.playerOrdnance.manifest.xLoc), float64(game.playerOrdnance.manifest.yLoc))
 		screen.DrawImage(game.playerOrdnance.manifest.pict, &game.drawOps)
@@ -248,6 +277,22 @@ func (game Game) Draw(screen *ebiten.Image) {
 			game.drawOps.GeoM.Translate(x, y)
 			screen.DrawImage(game.enemySprites[i].manifest.pict, &game.drawOps)
 		}
+	}
+	if game.bossSprite.visible && !game.bossDefeated {
+		game.drawOps.GeoM.Reset()
+		game.drawOps.GeoM.Translate(float64(game.bossSprite.manifest.xLoc), float64(game.bossSprite.manifest.yLoc))
+		screen.DrawImage(game.bossSprite.manifest.pict, &game.drawOps)
+	}
+
+	if game.bossDefeated {
+		game.drawOps.GeoM.Reset()
+		game.drawOps.GeoM.Translate(float64(game.VictoryBanner.xLoc), float64(game.VictoryBanner.yLoc))
+		screen.DrawImage(game.VictoryBanner.pict, &game.drawOps)
+	}
+	if game.playerSprite.health < 0 {
+		game.drawOps.GeoM.Reset()
+		game.drawOps.GeoM.Translate(float64(game.LossBanner.xLoc), float64(game.LossBanner.yLoc))
+		screen.DrawImage(game.LossBanner.pict, &game.drawOps)
 	}
 
 }
@@ -285,6 +330,17 @@ func loadEnemies(game *Game) {
 			game.enemySprites[i].manifest.yLoc = rand.Intn(ScreenHeight - height)
 		}
 	}
+	pict, _, err = ebitenutil.NewImageFromFile("assets/boss.png")
+	if err != nil {
+		log.Fatal("Failed to load enemy image", err)
+	}
+	game.bossSprite.manifest.pict = pict
+	game.bossSprite.health = 2
+	game.bossSprite.defeated = false
+	game.bossSprite.visible = false
+	width, height := game.bossSprite.manifest.pict.Size()
+	game.bossSprite.manifest.xLoc = rand.Intn(ScreenWidth - width)
+	game.bossSprite.manifest.yLoc = rand.Intn(ScreenHeight - height)
 }
 
 func loadCoins(game *Game) {
@@ -342,6 +398,21 @@ func loadTrackers(game *Game) {
 	}
 }
 
+func loadBanners(game *Game) {
+	game.VictoryBanner.yLoc = ScreenHeight / 2 //Setting player start point
+	pict, _, err := ebitenutil.NewImageFromFile("assets/winning-screen.png")
+	if err != nil {
+		log.Fatal("failed to load image", err)
+	}
+	game.VictoryBanner.pict = pict
+	game.LossBanner.yLoc = ScreenHeight / 2 //Setting player start point
+	pict, _, err = ebitenutil.NewImageFromFile("assets/nooned.png")
+	if err != nil {
+		log.Fatal("failed to load image", err)
+	}
+	game.LossBanner.pict = pict
+}
+
 func main() {
 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
 	ebiten.SetWindowTitle("The Death Road Through DMF")
@@ -350,6 +421,7 @@ func main() {
 	loadPlayer(&gameObject)
 	loadEnemies(&gameObject)
 	loadCoins(&gameObject)
+	loadBanners(&gameObject)
 	if err := ebiten.RunGame(&gameObject); err != nil {
 		log.Fatal("Oh no! something terrible happened", err)
 	}
