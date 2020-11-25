@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bufio"
+	"database/sql"
 	"fmt"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/image/colornames"
 	_ "image/png"
 	"log"
 	"math/rand"
+	"os"
 	"time"
 )
 
@@ -413,7 +417,21 @@ func loadBanners(game *Game) {
 	game.LossBanner.pict = pict
 }
 
+func setup_database() *sql.DB { //Create the database
+	database, _ := sql.Open("sqlite3", "./DeathRoadScores.db")
+	statement, _ := database.Prepare("CREATE TABLE IF NOT EXISTS highscores (id INTEGER PRIMARY KEY, username TEXT, score INTEGER)")
+	statement.Exec()
+	return database
+}
+
 func main() {
+	database := setup_database()
+	keyboard := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter a really cool username: ")
+	uname, err := keyboard.ReadString('\n')
+	if err != nil {
+		fmt.Println(err)
+	}
 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
 	ebiten.SetWindowTitle("The Death Road Through DMF")
 	gameObject := Game{}
@@ -422,7 +440,11 @@ func main() {
 	loadEnemies(&gameObject)
 	loadCoins(&gameObject)
 	loadBanners(&gameObject)
-	if err := ebiten.RunGame(&gameObject); err != nil {
-		log.Fatal("Oh no! something terrible happened", err)
-	}
+	//if err := ebiten.RunGame(&gameObject); err != nil {
+	//	log.Fatal("Oh no! something terrible happened", err)
+	//}
+	fmt.Println("Inserting ", uname, " with score ", gameObject.playerSprite.score)
+	statement, _ := database.Prepare("INSERT INTO jobsdata (username, score) VALUES (?, ?)")
+	//TODO: Sanitize inputs before insertion
+	statement.Exec(string(uname), int32(gameObject.playerSprite.score))
 }
