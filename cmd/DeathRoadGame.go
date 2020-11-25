@@ -440,9 +440,9 @@ func main() {
 	loadEnemies(&gameObject)
 	loadCoins(&gameObject)
 	loadBanners(&gameObject)
-	//if err := ebiten.RunGame(&gameObject); err != nil {
-	//	log.Fatal("Oh no! something terrible happened", err)
-	//}
+	if err := ebiten.RunGame(&gameObject); err != nil {
+		log.Fatal("Oh no! something terrible happened", err)
+	}
 	fmt.Println("Inserting ", uname, " with score ", gameObject.playerSprite.score)
 	statement, _ := database.Prepare("INSERT INTO jobsdata (username, score) VALUES (?, ?)")
 	//TODO: Sanitize inputs before insertion
