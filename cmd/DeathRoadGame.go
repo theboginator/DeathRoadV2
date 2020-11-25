@@ -14,23 +14,32 @@ import (
 
 const (
 	ScreenWidth  = 1024
-	ScreenHeight = 768
+	ScreenHeight = 1024
 	NumEnemies   = 3
+	NumBonus     = 3
+	StartHealth  = 3
+	MaxLife      = 5
 )
 
 type Sprite struct {
-	pict *ebiten.Image
-	xLoc int
-	yLoc int
-	dx   int
-	dy   int
+	pict   *ebiten.Image
+	xLoc   int
+	yLoc   int
+	dx     int
+	dy     int
+	width  int
+	height int
 }
 
 type Game struct {
 	playerSprite   Player
 	playerOrdnance Ordnance
 	enemySprites   [NumEnemies]Enemy
-	coinSprite     Sprite
+	coinSprites    [NumBonus]Coins
+	lifeCounter    Sprite
+	enemyCounter   Sprite
+	heart          [MaxLife]Sprite
+	badguy         [NumEnemies]Sprite
 	drawOps        ebiten.DrawImageOptions
 	activeOrdnance bool
 	collectedGold  bool
@@ -38,6 +47,7 @@ type Game struct {
 
 type Player struct {
 	name     string
+	impact   bool
 	health   int
 	startX   int
 	startY   int
@@ -53,6 +63,13 @@ type Enemy struct {
 	startX   int
 	startY   int
 	manifest Sprite
+}
+
+type Coins struct {
+	collected bool
+	lastSpawn time.Time
+	manifest  Sprite
+	visible   bool
 }
 
 type Ordnance struct {
@@ -86,11 +103,20 @@ func getPlayerInput(game *Game) { //Handle any movement from the player, and ini
 }
 
 func trackPlayer(game *Game) { //Move the player per keyboard input
+	tmpX := game.playerSprite.manifest.xLoc
+	tmpY := game.playerSprite.manifest.yLoc
 	game.playerSprite.manifest.yLoc += game.playerSprite.manifest.dy
 	game.playerSprite.manifest.xLoc += game.playerSprite.manifest.dx
+	if game.playerSprite.manifest.xLoc != tmpX && game.playerSprite.manifest.yLoc != tmpY { //If we moved from the previous position
+		game.playerSprite.impact = false //We might not be touching what we were before
+	}
 	for i := range game.enemySprites { //Check for a potential collision with an enemy
-		if madeContact(game.playerSprite.manifest, game.enemySprites[i].manifest) {
-			fmt.Println("You got n00ned by an enemy :(") //We die
+		if !game.enemySprites[i].defeated {
+			if madeContact(game.playerSprite.manifest, game.enemySprites[i].manifest) && !game.playerSprite.impact { //If the player touches an enemy we weren't already touching
+				fmt.Println("You got hit by an enemy :(")
+				game.playerSprite.health -= 1
+				game.playerSprite.impact = true
+			}
 		}
 	}
 
@@ -99,16 +125,34 @@ func trackPlayer(game *Game) { //Move the player per keyboard input
 func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fired in
 	game.playerOrdnance.manifest.yLoc += game.playerOrdnance.manifest.dy
 	game.playerOrdnance.manifest.xLoc += game.playerOrdnance.manifest.dx
-	if game.playerOrdnance.manifest.xLoc > 800 || game.playerOrdnance.manifest.xLoc < 0 || game.playerOrdnance.manifest.yLoc > 700 || game.playerOrdnance.manifest.yLoc < 0 { //If we've hit a border
-		game.activeOrdnance = false
-	} else if game.collectedGold == false {
-		game.collectedGold = gotGold(game.playerOrdnance.manifest, game.coinSprite) //If ordnance is active, check if it collided with enemy
+	if game.playerOrdnance.manifest.xLoc > ScreenWidth || game.playerOrdnance.manifest.xLoc < 0 || game.playerOrdnance.manifest.yLoc > ScreenHeight || game.playerOrdnance.manifest.yLoc < 0 { //If we've hit a border
+		game.activeOrdnance = false //Eliminate the ordnance
+	}
+	for i := range game.coinSprites {
+		if game.coinSprites[i].visible {
+			if madeContact(game.playerOrdnance.manifest, game.coinSprites[i].manifest) {
+				fmt.Println("You collected gold!")
+				game.coinSprites[i].visible = false
+				if i+1 >= NumBonus {
+					//We collected all the coins, award the extra life and restart the coin bonus process
+					fmt.Println("Another life earned! Resetting coin bonus.")
+					if game.playerSprite.health < MaxLife {
+						game.playerSprite.health += 1 //Only let the player have up to 5 lives at once
+					}
+					loadCoins(game)
+				} else {
+					game.coinSprites[i+1].visible = true
+				}
+				game.activeOrdnance = false
+			}
+		}
 	}
 	for i := range game.enemySprites {
 		if !game.enemySprites[i].defeated {
 			if madeContact(game.playerOrdnance.manifest, game.enemySprites[i].manifest) { //If the ordnance touched an enemy
 				fmt.Println("You n00ned an enemy!")
 				game.enemySprites[i].defeated = true
+				game.activeOrdnance = false
 			}
 		}
 	}
@@ -131,18 +175,6 @@ func launchPlayerOrdnance(game *Game) { //Initiate the launch of player ordnance
 	game.playerOrdnance.manifest.yLoc = game.playerSprite.manifest.yLoc
 	game.playerOrdnance.consumed = false
 	fmt.Println("Fired ordnance. Coords: ", game.playerOrdnance.manifest.dx, game.playerOrdnance.manifest.dy)
-}
-
-func gotGold(ordnance, gold Sprite) bool {
-	goldWidth, goldHeight := gold.pict.Size()
-	ordWidth, ordHeight := ordnance.pict.Size()
-	if ordnance.xLoc < gold.xLoc+goldWidth &&
-		ordnance.xLoc+ordWidth > gold.xLoc &&
-		ordnance.yLoc < gold.yLoc+goldHeight &&
-		ordnance.yLoc+ordHeight > gold.yLoc {
-		return true
-	}
-	return false
 }
 
 func madeContact(manifestA Sprite, manifestB Sprite) bool { //Check if 2 sprite objects are in a collision condition
@@ -172,15 +204,26 @@ func (game Game) Draw(screen *ebiten.Image) {
 	game.drawOps.GeoM.Reset()
 	game.drawOps.GeoM.Translate(float64(game.playerSprite.manifest.xLoc), float64(game.playerSprite.manifest.yLoc))
 	screen.DrawImage(game.playerSprite.manifest.pict, &game.drawOps)
-	if !game.collectedGold {
+	game.drawOps.GeoM.Reset()
+	game.drawOps.GeoM.Translate(float64(game.lifeCounter.xLoc), float64(game.lifeCounter.yLoc))
+	screen.DrawImage(game.lifeCounter.pict, &game.drawOps)
+	for i := 0; i <= game.playerSprite.health; i++ {
 		game.drawOps.GeoM.Reset()
-		game.drawOps.GeoM.Translate(float64(game.coinSprite.xLoc), float64(game.coinSprite.yLoc))
-		screen.DrawImage(game.coinSprite.pict, &game.drawOps)
+		game.drawOps.GeoM.Translate(float64(game.heart[i].xLoc), float64(game.heart[i].yLoc))
+		screen.DrawImage(game.heart[i].pict, &game.drawOps)
+		fmt.Println("Printed life #", i, "at", game.heart[i].xLoc, game.heart[i].yLoc)
 	}
 	if game.activeOrdnance {
 		game.drawOps.GeoM.Reset()
 		game.drawOps.GeoM.Translate(float64(game.playerOrdnance.manifest.xLoc), float64(game.playerOrdnance.manifest.yLoc))
 		screen.DrawImage(game.playerOrdnance.manifest.pict, &game.drawOps)
+	}
+	for i := range game.coinSprites { //For each coin in the coin sprite array
+		if game.coinSprites[i].visible { //Draw it if it's visible
+			game.drawOps.GeoM.Reset()
+			game.drawOps.GeoM.Translate(float64(game.coinSprites[i].manifest.xLoc), float64(game.coinSprites[i].manifest.yLoc))
+			screen.DrawImage(game.coinSprites[i].manifest.pict, &game.drawOps)
+		}
 	}
 	for i := range game.enemySprites { //For each enemy in the enemy sprite array
 		if !game.enemySprites[i].defeated { //Draw the undefeated ones
@@ -191,6 +234,7 @@ func (game Game) Draw(screen *ebiten.Image) {
 			screen.DrawImage(game.enemySprites[i].manifest.pict, &game.drawOps)
 		}
 	}
+
 }
 
 func (g Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
@@ -200,46 +244,79 @@ func (g Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight
 func loadPlayer(game *Game) {
 	game.playerSprite.manifest.yLoc = ScreenHeight / 2 //Setting player start point
 	pict, _, err := ebitenutil.NewImageFromFile("assets/player.png")
-	if err != nil { //firing   bool
+	if err != nil {
 		log.Fatal("failed to load player image", err)
 	}
 	game.playerSprite.manifest.pict = pict
-}
-
-func loadCoinSprite(game *Game) {
-	coins, _, err := ebitenutil.NewImageFromFile("assets/gold-coins.png")
-	if err != nil {
-		log.Fatal("failed to load image", err)
-	}
-	game.coinSprite.pict = coins
-	width, height := game.coinSprite.pict.Size()
-	rand.Seed(int64(time.Now().Second()))
-	game.coinSprite.xLoc = rand.Intn(ScreenWidth - width)
-	game.coinSprite.yLoc = rand.Intn(ScreenHeight - height)
+	game.playerSprite.health = StartHealth
 }
 
 func loadEnemies(game *Game) {
+	pict, _, err := ebitenutil.NewImageFromFile("assets/enemy.png")
+	if err != nil {
+		log.Fatal("Failed to load enemy image", err)
+	}
+	rand.Seed(int64(time.Now().Second()))
 	for i := range game.enemySprites {
-		pict, _, err := ebitenutil.NewImageFromFile("assets/galleon.png")
-		if err != nil {
-			log.Fatal("Failed to load enemy image", err)
-		}
 		game.enemySprites[i].manifest.pict = pict
 		game.enemySprites[i].health = 2
 		game.enemySprites[i].defeated = false
 		width, height := game.enemySprites[i].manifest.pict.Size()
 		game.enemySprites[i].manifest.xLoc = rand.Intn(ScreenWidth - width)
 		game.enemySprites[i].manifest.yLoc = rand.Intn(ScreenHeight - height)
+		for madeContact(game.playerSprite.manifest, game.enemySprites[i].manifest) { //Respawn the enemy if it spawned on top of the player.
+			game.enemySprites[i].manifest.xLoc = rand.Intn(ScreenWidth - width)
+			game.enemySprites[i].manifest.yLoc = rand.Intn(ScreenHeight - height)
+		}
 	}
+}
+
+func loadCoins(game *Game) {
+	pict, _, err := ebitenutil.NewImageFromFile("assets/gold-coins.png")
+	if err != nil {
+		log.Fatal("failed to load image", err)
+	}
+	width, height := pict.Size()
+	for i := range game.coinSprites {
+		game.coinSprites[i].manifest.pict = pict
+		game.coinSprites[i].collected = false
+		game.coinSprites[i].visible = false
+		game.coinSprites[i].manifest.xLoc = rand.Intn(ScreenWidth - width)
+		game.coinSprites[i].manifest.yLoc = rand.Intn(ScreenHeight - height)
+	}
+	game.coinSprites[0].visible = true
+}
+
+func loadTrackers(game *Game) {
+	pict, _, err := ebitenutil.NewImageFromFile("assets/lives-remain.png")
+	if err != nil {
+		log.Fatal("failed to load image", err)
+	}
+	game.lifeCounter.pict = pict
+	game.lifeCounter.width, game.lifeCounter.height = pict.Size()
+	game.lifeCounter.xLoc = 0
+	game.lifeCounter.yLoc = ScreenHeight - game.lifeCounter.height
+	pict, _, err = ebitenutil.NewImageFromFile("assets/heart.png")
+	if err != nil {
+		log.Fatal("failed to load image, ", err)
+	}
+	for i := range game.heart {
+		game.heart[i].pict = pict
+		game.heart[i].width, game.heart[i].height = pict.Size()
+		game.heart[i].xLoc = (game.heart[i].width * i) + game.lifeCounter.width
+		game.heart[i].yLoc = ScreenHeight - game.heart[i].height
+	}
+
 }
 
 func main() {
 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
 	ebiten.SetWindowTitle("The Death Road Through DMF")
 	gameObject := Game{}
+	loadTrackers(&gameObject)
 	loadPlayer(&gameObject)
 	loadEnemies(&gameObject)
-	loadCoinSprite(&gameObject)
+	loadCoins(&gameObject)
 	if err := ebiten.RunGame(&gameObject); err != nil {
 		log.Fatal("Oh no! something terrible happened", err)
 	}
