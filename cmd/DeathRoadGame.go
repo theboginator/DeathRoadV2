@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	ScreenWidth   = 800
-	ScreenHeight  = 700
-	OrdnanceSpeed = 8
+	ScreenWidth  = 1024
+	ScreenHeight = 768
+	NumEnemies   = 3
 )
 
 type Sprite struct {
@@ -29,6 +29,7 @@ type Sprite struct {
 type Game struct {
 	playerSprite   Player
 	playerOrdnance Ordnance
+	enemySprites   [NumEnemies]Enemy
 	coinSprite     Sprite
 	drawOps        ebiten.DrawImageOptions
 	activeOrdnance bool
@@ -41,9 +42,17 @@ type Player struct {
 	startX   int
 	startY   int
 	score    int32
-	firing   bool
 	manifest Sprite
-	weapon   Sprite
+}
+
+type Enemy struct {
+	name     string
+	lastMove time.Time
+	health   int
+	defeated bool
+	startX   int
+	startY   int
+	manifest Sprite
 }
 
 type Ordnance struct {
@@ -79,6 +88,12 @@ func getPlayerInput(game *Game) { //Handle any movement from the player, and ini
 func trackPlayer(game *Game) { //Move the player per keyboard input
 	game.playerSprite.manifest.yLoc += game.playerSprite.manifest.dy
 	game.playerSprite.manifest.xLoc += game.playerSprite.manifest.dx
+	for i := range game.enemySprites { //Check for a potential collision with an enemy
+		if madeContact(game.playerSprite.manifest, game.enemySprites[i].manifest) {
+			fmt.Println("You got n00ned by an enemy :(") //We die
+		}
+	}
+
 }
 
 func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fired in
@@ -86,10 +101,17 @@ func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fir
 	game.playerOrdnance.manifest.xLoc += game.playerOrdnance.manifest.dx
 	if game.playerOrdnance.manifest.xLoc > 800 || game.playerOrdnance.manifest.xLoc < 0 || game.playerOrdnance.manifest.yLoc > 700 || game.playerOrdnance.manifest.yLoc < 0 { //If we've hit a border
 		game.activeOrdnance = false
-		fmt.Println("n00ned some ordnance for hitting a wall")
+	} else if game.collectedGold == false {
+		game.collectedGold = gotGold(game.playerOrdnance.manifest, game.coinSprite) //If ordnance is active, check if it collided with enemy
 	}
-	//else if we've hit an enemy/boss
-	//damage it
+	for i := range game.enemySprites {
+		if !game.enemySprites[i].defeated {
+			if madeContact(game.playerOrdnance.manifest, game.enemySprites[i].manifest) { //If the ordnance touched an enemy
+				fmt.Println("You n00ned an enemy!")
+				game.enemySprites[i].defeated = true
+			}
+		}
+	}
 }
 
 func launchPlayerOrdnance(game *Game) { //Initiate the launch of player ordnance
@@ -123,15 +145,23 @@ func gotGold(ordnance, gold Sprite) bool {
 	return false
 }
 
+func madeContact(manifestA Sprite, manifestB Sprite) bool { //Check if 2 sprite objects are in a collision condition
+	aWidth, aHeight := manifestA.pict.Size()
+	bWidth, bHeight := manifestB.pict.Size()
+	if manifestA.xLoc < manifestB.xLoc+aWidth &&
+		manifestA.xLoc+bWidth > manifestB.xLoc &&
+		manifestA.yLoc < manifestB.yLoc+aHeight &&
+		manifestA.yLoc+bHeight > manifestB.yLoc {
+		return true
+	}
+	return false
+}
+
 func (game *Game) Update() error {
 	getPlayerInput(game)
 	trackPlayer(game)
 	if game.activeOrdnance {
 		trackOrdnance(game)
-		if game.collectedGold == false {
-			game.collectedGold = gotGold(game.playerOrdnance.manifest, game.coinSprite) //If ordnance is active, check if it collided with enemy
-		}
-
 	}
 
 	return nil
@@ -152,6 +182,15 @@ func (game Game) Draw(screen *ebiten.Image) {
 		game.drawOps.GeoM.Translate(float64(game.playerOrdnance.manifest.xLoc), float64(game.playerOrdnance.manifest.yLoc))
 		screen.DrawImage(game.playerOrdnance.manifest.pict, &game.drawOps)
 	}
+	for i := range game.enemySprites { //For each enemy in the enemy sprite array
+		if !game.enemySprites[i].defeated { //Draw the undefeated ones
+			game.drawOps.GeoM.Reset()
+			x := float64(game.enemySprites[i].manifest.xLoc)
+			y := float64(game.enemySprites[i].manifest.yLoc)
+			game.drawOps.GeoM.Translate(x, y)
+			screen.DrawImage(game.enemySprites[i].manifest.pict, &game.drawOps)
+		}
+	}
 }
 
 func (g Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
@@ -160,8 +199,8 @@ func (g Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight
 
 func loadPlayer(game *Game) {
 	game.playerSprite.manifest.yLoc = ScreenHeight / 2 //Setting player start point
-	pict, _, err := ebitenutil.NewImageFromFile("assets/galleon.png")
-	if err != nil {
+	pict, _, err := ebitenutil.NewImageFromFile("assets/player.png")
+	if err != nil { //firing   bool
 		log.Fatal("failed to load player image", err)
 	}
 	game.playerSprite.manifest.pict = pict
@@ -179,11 +218,27 @@ func loadCoinSprite(game *Game) {
 	game.coinSprite.yLoc = rand.Intn(ScreenHeight - height)
 }
 
+func loadEnemies(game *Game) {
+	for i := range game.enemySprites {
+		pict, _, err := ebitenutil.NewImageFromFile("assets/galleon.png")
+		if err != nil {
+			log.Fatal("Failed to load enemy image", err)
+		}
+		game.enemySprites[i].manifest.pict = pict
+		game.enemySprites[i].health = 2
+		game.enemySprites[i].defeated = false
+		width, height := game.enemySprites[i].manifest.pict.Size()
+		game.enemySprites[i].manifest.xLoc = rand.Intn(ScreenWidth - width)
+		game.enemySprites[i].manifest.yLoc = rand.Intn(ScreenHeight - height)
+	}
+}
+
 func main() {
 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
 	ebiten.SetWindowTitle("The Death Road Through DMF")
 	gameObject := Game{}
 	loadPlayer(&gameObject)
+	loadEnemies(&gameObject)
 	loadCoinSprite(&gameObject)
 	if err := ebiten.RunGame(&gameObject); err != nil {
 		log.Fatal("Oh no! something terrible happened", err)
