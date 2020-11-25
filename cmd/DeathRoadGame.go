@@ -15,10 +15,13 @@ import (
 const (
 	ScreenWidth  = 1024
 	ScreenHeight = 1024
-	NumEnemies   = 3
-	NumBonus     = 3
-	StartHealth  = 3
-	MaxLife      = 5
+	NumEnemies   = 3   //Number of enemies that will spawn
+	NumBonus     = 3   //Number of coin collections needed to earn a bonus life
+	StartHealth  = 3   //Player's starting lives
+	MaxLife      = 5   //Max life the player can earn
+	GoldScore    = 50  //Bonus for collecting gold
+	EnemyScore   = 100 //Score for killing an enemy
+	BossScore    = 200 //Score for killing the boss
 )
 
 type Sprite struct {
@@ -34,6 +37,7 @@ type Sprite struct {
 type Game struct {
 	playerSprite   Player
 	playerOrdnance Ordnance
+	activeEnemies  int
 	enemySprites   [NumEnemies]Enemy
 	coinSprites    [NumBonus]Coins
 	lifeCounter    Sprite
@@ -132,13 +136,14 @@ func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fir
 		if game.coinSprites[i].visible {
 			if madeContact(game.playerOrdnance.manifest, game.coinSprites[i].manifest) {
 				fmt.Println("You collected gold!")
+				game.playerSprite.score += GoldScore
 				game.coinSprites[i].visible = false
 				if i+1 >= NumBonus {
 					//We collected all the coins, award the extra life and restart the coin bonus process
-					fmt.Println("Another life earned! Resetting coin bonus.")
 					if game.playerSprite.health < MaxLife {
 						game.playerSprite.health += 1 //Only let the player have up to 5 lives at once
 					}
+					fmt.Println("Another life earned! Resetting coin bonus. You now have ", game.playerSprite.health)
 					loadCoins(game)
 				} else {
 					game.coinSprites[i+1].visible = true
@@ -153,6 +158,7 @@ func trackOrdnance(game *Game) { //Move any ordnance in the direction it was fir
 				fmt.Println("You n00ned an enemy!")
 				game.enemySprites[i].defeated = true
 				game.activeOrdnance = false
+				game.activeEnemies--
 			}
 		}
 	}
@@ -204,6 +210,7 @@ func (game Game) Draw(screen *ebiten.Image) {
 	game.drawOps.GeoM.Reset()
 	game.drawOps.GeoM.Translate(float64(game.playerSprite.manifest.xLoc), float64(game.playerSprite.manifest.yLoc))
 	screen.DrawImage(game.playerSprite.manifest.pict, &game.drawOps)
+
 	game.drawOps.GeoM.Reset()
 	game.drawOps.GeoM.Translate(float64(game.lifeCounter.xLoc), float64(game.lifeCounter.yLoc))
 	screen.DrawImage(game.lifeCounter.pict, &game.drawOps)
@@ -211,8 +218,16 @@ func (game Game) Draw(screen *ebiten.Image) {
 		game.drawOps.GeoM.Reset()
 		game.drawOps.GeoM.Translate(float64(game.heart[i].xLoc), float64(game.heart[i].yLoc))
 		screen.DrawImage(game.heart[i].pict, &game.drawOps)
-		fmt.Println("Printed life #", i, "at", game.heart[i].xLoc, game.heart[i].yLoc)
 	}
+	game.drawOps.GeoM.Reset()
+	game.drawOps.GeoM.Translate(float64(game.enemyCounter.xLoc), float64(game.enemyCounter.yLoc))
+	screen.DrawImage(game.enemyCounter.pict, &game.drawOps)
+	for i := 0; i < game.activeEnemies; i++ {
+		game.drawOps.GeoM.Reset()
+		game.drawOps.GeoM.Translate(float64(game.badguy[i].xLoc), float64(game.badguy[i].yLoc))
+		screen.DrawImage(game.badguy[i].pict, &game.drawOps)
+	}
+
 	if game.activeOrdnance {
 		game.drawOps.GeoM.Reset()
 		game.drawOps.GeoM.Translate(float64(game.playerOrdnance.manifest.xLoc), float64(game.playerOrdnance.manifest.yLoc))
@@ -252,6 +267,7 @@ func loadPlayer(game *Game) {
 }
 
 func loadEnemies(game *Game) {
+	game.activeEnemies = NumEnemies
 	pict, _, err := ebitenutil.NewImageFromFile("assets/enemy.png")
 	if err != nil {
 		log.Fatal("Failed to load enemy image", err)
@@ -306,7 +322,24 @@ func loadTrackers(game *Game) {
 		game.heart[i].xLoc = (game.heart[i].width * i) + game.lifeCounter.width
 		game.heart[i].yLoc = ScreenHeight - game.heart[i].height
 	}
-
+	pict, _, err = ebitenutil.NewImageFromFile("assets/enemies-remain.png")
+	if err != nil {
+		log.Fatal("Failed to load image", err)
+	}
+	game.enemyCounter.pict = pict
+	game.enemyCounter.width, game.enemyCounter.height = game.enemyCounter.pict.Size()
+	game.enemyCounter.xLoc = 0
+	game.enemyCounter.yLoc = (ScreenHeight - game.enemyCounter.height) - game.lifeCounter.height //Stack the enemy life counter on top of the player life counter
+	pict, _, err = ebitenutil.NewImageFromFile("assets/enemy-count.png")
+	if err != nil {
+		log.Fatal("failed to load image, ", err)
+	}
+	for i := range game.badguy {
+		game.badguy[i].pict = pict
+		game.badguy[i].width, game.badguy[i].height = pict.Size()
+		game.badguy[i].xLoc = (game.badguy[i].width * i) + game.enemyCounter.width
+		game.badguy[i].yLoc = (ScreenHeight - game.heart[i].height) - game.lifeCounter.height
+	}
 }
 
 func main() {
