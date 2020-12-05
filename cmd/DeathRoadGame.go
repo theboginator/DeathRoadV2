@@ -444,7 +444,11 @@ func main() {
 		log.Fatal("Oh no! something terrible happened", err)
 	}
 	fmt.Println("Inserting ", uname, " with score ", gameObject.playerSprite.score)
-	statement, _ := database.Prepare("INSERT INTO jobsdata (username, score) VALUES (?, ?)")
+	statement, err := database.Prepare("INSERT INTO highscores (username, score) VALUES (?, ?)")
+
 	//TODO: Sanitize inputs before insertion
 	statement.Exec(string(uname), int32(gameObject.playerSprite.score))
+	if err != nil {
+		log.Fatal("Something terrible happened. ", err)
+	}
 }
